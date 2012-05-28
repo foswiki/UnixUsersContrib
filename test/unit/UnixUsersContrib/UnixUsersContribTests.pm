@@ -1,0 +1,37 @@
+use strict;
+
+package UnixUsersContribTests;
+
+use TWikiTestCase;
+our @ISA = qw( TWikiTestCase );
+
+use strict;
+use Foswiki;
+use CGI;
+
+my $twiki;
+
+sub new {
+    my $self = shift()->SUPER::new(@_);
+    return $self;
+}
+
+# Set up the test fixture
+sub set_up {
+    my $this = shift;
+
+    $this->SUPER::set_up();
+
+    $Foswiki::Plugins::SESSION = $twiki;
+}
+
+sub tear_down {
+    my $this = shift;
+    $this->SUPER::tear_down();
+}
+
+sub test_self {
+    my $this = shift;
+}
+
+1;

@@ -1,0 +1,4 @@
+data/System/UnixUsersContrib.txt  Plugin doc page
+lib/Foswiki/Contrib/UnixUsersContrib.pm  Plugin Perl module
+lib/Foswiki/Users/UnixUserMapping.pm get User and Group information from Unix Database
+lib/Foswiki/Contrib/UnixUsersContrib/Config.spec
