@@ -5,7 +5,7 @@ read only access to the User and Groups in a Unix Database. Registration of
 new users and their association with Groups is then _only_ handled by Unix,
 but still is possible to create groups in Foswiki normaly.
 
-UnixUsersContrib is based on JoomlaUsersContrib by Foswiki:Main.SvenDowideit.
+UnixUsersContrib is based on Foswiki:Extensions.JoomlaUsersContrib by Foswiki:Main.SvenDowideit.
 
 ---++ Settings
 

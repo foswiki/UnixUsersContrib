@@ -19,6 +19,10 @@ use vars qw( $VERSION );
 $VERSION = '0.1.0';
 use strict;
 
+sub debug {
+    print STDERR "# $_[0]\n" if $Foswiki::cfg{UnixUsersContrib}{Debug};
+}
+
 =pod
 
 ---++ ClassMethod openPipe($string) -> $pipe
@@ -29,6 +33,7 @@ Run command-line in $string and return pipe.
 
 sub openPipe {
     my @command_line = @_;
+    debug "openPipe(@_)";
     open my $PIPE, "-|", @command_line;
     return $PIPE;
 }

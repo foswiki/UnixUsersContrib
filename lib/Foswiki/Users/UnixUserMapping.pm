@@ -14,9 +14,14 @@
 #
 # As per the GPL, removal of this notice is prohibited.
 
-=begin pod
+=pod
 
 ---+ package Foswiki::Users::UnixUserMapping
+
+canonical users ids = login unix name
+ * $cUID
+ * is the same as login in Foswiki
+ * the same as canonical user name too
 
 =cut
 
@@ -29,7 +34,7 @@ use Authen::Simple::PAM;
 use Error qw( :try );
 
 sub debug {
-    print STDERR "# $_[0]\n";
+    print STDERR "# $_[0]\n" if $Foswiki::cfg{UnixUsersContrib}{Debug};
 }
 
 =pod
@@ -46,16 +51,31 @@ sub new {
     my $this = bless($class->SUPER::new($session, 'UnixUserMapping_'), $class);
     $this->{mapping_id} = 'UnixUserMapping_';
     $this->{error} = undef;
-
-    my %groups = map { $_ => {
-          wikiname => Foswiki::Contrib::UnixUsersContrib::camelize($_) . 'Group',
-       } } $this->unixGroups();
-    $this->{groups} = \%groups;
-
+    $this->{groups} = $this->unixGroups();
+    $this->{users} = $this->unixUsers();
     return $this;
 }
 
-=begin pod
+sub unixUsers {
+   my $this = shift;
+   my %users = ();
+   debug "unixUsers()";
+   my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(/usr/bin/getent passwd));
+   while (<$pipe>) {
+      chomp;
+      if (m/(?<login>[\S]+):x:(?<uid>\d+):(?<gid>\d+):(?<fullname>[^,]+),[^,]*,[^,]*,:[^,]*:[^,]*/) {
+         my $login = $+{login};
+         #Make sure we're in 'ok' Wiki word territory
+         $users{$login}{fullname} = $+{fullname};
+         (my $wikiname = $+{fullname}) =~ s/[^\w]+(\w)/uc($1)/ge;
+         $users{$login}{wikiname} = ucfirst($wikiname);
+      }
+   }
+   close $pipe;
+   return \%users;
+}
+
+=pod
 
 ---++ ObjectMethod finish()
 
@@ -71,6 +91,7 @@ sub finish {
     my $this = shift;
     Foswiki::Contrib::UnixUsersContrib::finish();
     $this->{groups} = undef;
+    $this->{users} = undef;
     $this->SUPER::finish();
     return;
 }
@@ -89,7 +110,7 @@ sub supportsRegistration {
     return 0;
 }
 
-=begin pod
+=pod
 
 ---++ ObjectMethod handlesUser($cUID, $login, $wikiname) -> $boolean
 
@@ -100,29 +121,13 @@ to use for a given user (must be fast).
 
 sub handlesUser {
     my ($this, $cUID, $login, $wikiname) = @_;
-    debug "handlesUser($cUID, $login, $wikiname)";
+    debug "handlesUser(" .  join(', ', map {$_ // 'undef'} ($cUID, $login, $wikiname)) .  ")";
     return 1 if ( defined $cUID && $cUID =~ /$this->{mapping_id}.*/ );
-    return 1 if ( $cUID     && $this->login2cUID($cUID) );
-    return 1 if ( $login    && $this->login2cUID($login) );
-    return 1 if ( $wikiname && $this->findUserByWikiName($wikiname) );
+    return 0 if ( ($cUID && $cUID =~ m/Group$/) || ($login && $login =~ m/Group$/) || ($wikiname && $wikiname =~ m/Group$/) );
+    return 1 if ( $cUID );
+    return 1 if ( $login && !($login    =~ m/^BaseUserMapping_/) );
+    return 1 if ( $wikiname && !($wikiname =~ m/^BaseUserMapping_/) && $this->findUserByWikiName($wikiname) );
     return 0;
-}
-
-=pod
-
----++ ObjectMethod getLoginName($cUID) -> login
-
-Converts an internal cUID to that user's login
-(undef on failure)
-
-Subclasses *must* implement this method.
-
-=cut
-
-sub getLoginName {
-    my ($this, $user) = @_;
-    debug "getLoginName($user)";
-    return $this->canonical2login($user);
 }
 
 =pod
@@ -165,28 +170,18 @@ example below the WikiName of joao is "JoaoSilva".
 # getent passwd joao
 joao:x:1003:1004:Joao Silva,,,:/home/joao:/bin/bash
 
+Canonical user name is the same as login in UnixUserMapping.
+
 =cut
 
 sub getWikiName {
     my ($this, $user) = @_;
-    $user =~ s/^$this->{mapping_id}//;
     chomp $user;
     debug "getWikiName($user)";
-
-    #TODO (see Taint mode)
-    $user =~ m/(\S+)/; $user = $1;
-    $ENV{PATH} =~ m/(.+)/; $ENV{PATH} = $1;
-    my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(getent passwd), $user);
-    my $output = <$pipe>;
-    close $pipe;
-    if ($output && $output =~ m/[\S]+:x:(?<uid>\d+):(?<gid>\d+):(?<fullname>[^,]+),[^,]*,[^,]*,:[^,]*:[^,]*/) {
-        #Make sure we're in 'ok' Wiki word territory
-        (my $wikiname = $+{fullname}) =~ s/[^\w]+(\w)/uc($1)/ge;
-        return ucfirst($wikiname);
-    }
-    else {
-        return $user;
-    }
+    return $this->{users}{$user}{wikiname} if $this->{users}{$user};
+    return $user if grep { $user eq $this->{users}{$_}{wikiname} } keys %{$this->{users}};
+    return $user if $user =~ m/Group$/;
+    return $user;
 }
 
 =pod
@@ -207,17 +202,17 @@ Subclasses *must* implement this method.
 sub eachGroupMember {
     my ($this, $group) = @_;
     debug "eachGroupMember($group)";
-    (my $unix_group) = grep { $this->{groups}{$_}{wikiname} eq $group } $this->unixGroups();
+    (my $unix_group) = grep { $this->{groups}{$_}{wikiname} eq $group } keys %{ $this->{groups} };
     if ($unix_group) {
        if (defined $this->{groups}{$unix_group}{members}) {
           return new Foswiki::ListIterator($this->{groups}{$unix_group}{members});
        }
        else {
           my $members = [];
-          my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(getent group), $unix_group);
+          my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(/usr/bin/getent group), $unix_group);
           (my $output = <$pipe>) =~ s/$unix_group:x:\d+://;
           foreach (grep {$_ =~ /\S/} split( /,/, $output)) {
-             push @{$members}, $this->{mapping_id} . $_;
+             push @{$members}, $_;
           }
           close $pipe;
           $this->{groups}{$unix_group}{members} = $members;
@@ -303,7 +298,6 @@ Default behaviour is to return 1.
 
 sub checkPassword {
     my ($this, $user, $password) = @_;
-    $user = $this->canonical2login($user);
     debug "checkPassword($user, $password)";
     my $pam = Authen::Simple::PAM->new(service => 'login');
     if ($pam->authenticate($user, $password)) {
@@ -348,35 +342,6 @@ sub passwordError {
 
 =pod
 
----++ ObjectMethod canonical2login($user) -> $string
-
-Convert a canonical user name to the corresponding login name. The
-canonical name can be any string of 7-bit alphanumeric and underscore
-characters, and must correspond 1:1 to the login name.
-
-Ex.: WikiUser -> Wiki User
-
-return $user if couldn't convert (the default)
-
-=cut
-
-sub canonical2login {
-    my ($this, $user) = @_;
-    debug "canonical2login($user)";
-    $user =~ s/^$this->{mapping_id}//;
-    (my $fullname = $user) =~ s/(\S)([[:upper:]])/$1 $2/g;
-    my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(getent passwd));
-    while (<$pipe>) {
-        if (m/(?<name>[\S]+):x:(?<uid>\d+):(?<gid>\d+):$fullname,[^,]*,[^,]*,:[^,]*:[^,]*/) {
-            $user = $+{name};
-        }
-    }
-    close $pipe;
-    return $user;
-}
-
-=pod
-
 ---++ ObjectMethod unixGroups() -> @groups
 
 Fetch all unix groups that match with "GroupFilter" configuration:
@@ -392,22 +357,40 @@ Ex.: wikiadmins -> WikiadminsGroup
 
 sub unixGroups {
     my $this = shift;
-    return keys %{ $this->{groups} } if $this->{groups};
     debug "unixGroups()";
     my $filter = $Foswiki::cfg{UnixUsersContrib}{GroupFilter} || '_group$';
-    my @groups = ();
+    my %groups = ();
     my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(/usr/bin/getent group));
     while (<$pipe>) {
         s/^(\S+):x:\d+:.*$/$1/e;
         next unless m/$filter/;
         chomp;
-        push @groups, $_;
+        $groups{$_}{wikiname} = Foswiki::Contrib::UnixUsersContrib::camelize($_) . 'Group';
     }
     close $pipe;
-    return @groups;
+    return \%groups;
 }
 
-=begin pod
+=pod
+
+---++ ObjectMethod getLoginName($cUID) -> login
+
+Converts an internal cUID to that user's login
+(undef on failure)
+
+Subclasses *must* implement this method.
+
+In UnixUserMapping canonical and login are the same!
+
+=cut
+
+sub getLoginName {
+    my ($this, $user) = @_;
+    return $user;
+}
+
+
+=pod
 
 ---++ ObjectMethod login2cUID($login, $dontcheck) -> cUID
 
@@ -420,13 +403,13 @@ characters, and must correspond 1:1 to the login name.
 
 Subclasses *must* implement this method.
 
+Login and canonical user name are the same in UnixUserMapping.
+
 =cut
 
 sub login2cUID {
     my ($this, $login, $dontcheck) = @_;
-    debug "login2cUID($login)";
-    #we ignore $dontcheck as this mapper does not do registration.
-    return $this->getWikiName($login);
+    return $login;
 }
 
 1;
