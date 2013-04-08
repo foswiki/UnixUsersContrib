@@ -16,7 +16,7 @@
 
 package Foswiki::Contrib::UnixUsersContrib;
 use vars qw( $VERSION );
-$VERSION = '0.1.2';
+$VERSION = '0.1.3';
 use strict;
 
 sub debug {
