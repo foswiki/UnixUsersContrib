@@ -56,25 +56,6 @@ sub new {
     return $this;
 }
 
-sub unixUsers {
-   my $this = shift;
-   my %users = ();
-   debug "unixUsers()";
-   my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(/usr/bin/getent passwd));
-   while (<$pipe>) {
-      chomp;
-      if (m/(?<login>[\S]+):x:(?<uid>\d+):(?<gid>\d+):(?<fullname>[^,]+),[^,]*,[^,]*,:[^,]*:[^,]*/) {
-         my $login = $+{login};
-         #Make sure we're in 'ok' Wiki word territory
-         $users{$login}{fullname} = $+{fullname};
-         (my $wikiname = $+{fullname}) =~ s/[^\w]+(\w)/uc($1)/ge;
-         $users{$login}{wikiname} = ucfirst($wikiname);
-      }
-   }
-   close $pipe;
-   return \%users;
-}
-
 =pod
 
 ---++ ObjectMethod finish()
@@ -180,7 +161,6 @@ sub getWikiName {
     debug "getWikiName($user)";
     return $this->{users}{$user}{wikiname} if $this->{users}{$user};
     return $user if grep { $user eq $this->{users}{$_}{wikiname} } keys %{$this->{users}};
-    return $user if $user =~ m/Group$/;
     return $user;
 }
 
@@ -266,8 +246,7 @@ Default is *false*
 
 sub isInGroup {
     my ($this, $user, $group) = @_;
-    debug "isInGroup($user, $group)";
-    my @users;
+    $user = $this->getWikiName($user);
     my $it = $this->eachGroupMember($group);
     while ($it->hasNext()) {
         my $u = $this->getWikiName($it->next());
@@ -342,7 +321,7 @@ sub passwordError {
 
 =pod
 
----++ ObjectMethod unixGroups() -> @groups
+---++ ObjectMethod unixGroups() -> \%groups
 
 Fetch all unix groups that match with "GroupFilter" configuration:
 
@@ -373,6 +352,34 @@ sub unixGroups {
 
 =pod
 
+---++ ObjectMethod unixUsers() -> \%users
+
+Fetch all unix users present in Unix Usesr Database (normally /etc/passwd)
+
+=cut
+
+sub unixUsers {
+   my $this = shift;
+   my %users = ();
+   debug "unixUsers()";
+   my $pipe = Foswiki::Contrib::UnixUsersContrib::openPipe(qw(/usr/bin/getent passwd));
+   while (<$pipe>) {
+      chomp;
+      if (m/(?<login>[\S]+):x:(?<uid>\d+):(?<gid>\d+):(?<fullname>[^,]+),[^,]*,[^,]*,:[^,]*:[^,]*/) {
+         my $login = $+{login};
+         #Make sure we're in 'ok' Wiki word territory
+         $users{$login}{fullname} = $+{fullname};
+         (my $wikiname = $+{fullname}) =~ s/[^\w]+(\w)/uc($1)/ge;
+         $users{$login}{wikiname} = ucfirst($wikiname);
+      }
+   }
+   close $pipe;
+   return \%users;
+}
+
+
+=pod
+
 ---++ ObjectMethod getLoginName($cUID) -> login
 
 Converts an internal cUID to that user's login
@@ -386,9 +393,11 @@ In UnixUserMapping canonical and login are the same!
 
 sub getLoginName {
     my ($this, $user) = @_;
+    foreach (keys %{$this->{users}}) {
+       return $_ if $user eq $this->{users}{$_}{wikiname};
+    }
     return $user;
 }
-
 
 =pod
 

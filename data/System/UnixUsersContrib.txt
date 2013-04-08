@@ -32,5 +32,6 @@ Settings are in =lib/LocalSite.cfg=. the Foswiki configure script does not curre
 | Dependencies: | %$DEPENDENCIES% |
 | Version: | %$VERSION%  |
 | Change History: | <!-- versions below in reverse order -->&nbsp; |
+| 07 Apr 2013 | Bugfix revision |
 | 24 May 2012 | Initial version |
 | Home: | http://foswiki.org/Extensions/%TOPIC% |
