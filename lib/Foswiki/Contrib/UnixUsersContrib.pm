@@ -34,6 +34,9 @@ Run command-line in $string and return pipe.
 sub openPipe {
     my @command_line = @_;
     debug "openPipe(@_)";
+    # Set PATH and remove some environment variables for running in taint mode.
+    $ENV{'PATH'} = '/bin:/usr/bin:/usr/local/bin';
+    delete @ENV{'IFS', 'CDPATH', 'ENV', 'BASH_ENV'};
     open my $PIPE, "-|", @command_line;
     return $PIPE;
 }
